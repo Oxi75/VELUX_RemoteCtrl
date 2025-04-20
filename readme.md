@@ -48,16 +48,12 @@ The firmware supports two modes:
 
 
 2. **Control Mode**:
-   - Activated after successful configuration.
-   - Connects to the configured WiFi network and integrates with Homee.
+   - Activated after successful configuration
+   - Connects to the configured WiFi network and integrates with Homee
+   - To add in homee: Open homee app, select "Geräte" -> + (hinzufügen) -> Verschiedene -> homee in homee -> 2a homee verbinden
+     Enter the configured IP address (not the one from the access point) and any string as user name and password.
+     
 
-
-## Homee Integration
-
-The firmware uses the `virtualHomee` library to create a virtual Homee node. It supports the following attributes:
-
-- **Shutter Control**: Open, close, or stop the roller shutters.
-- **Firmware Version**: Displays the current firmware version.
 
 ## How to Build and Upload
 
