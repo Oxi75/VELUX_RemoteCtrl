@@ -1,0 +1,25 @@
+Material Bill
+
+ESP8266 ESP12F  -  2€
+R1 10 kOhm - 0.1€
+R2 56  Ohm - 0.1€
+AM1117 3.3V Module - 1.50 €
+USB C connector femail - 0.5 €
+LED - 0.3 €
+VELUX KLI 310 - 15€
+================================
+Sum: 19.50 €
+
+
+
+==========================
+Connections:
+
+GPIO 15 -> GND
+EN -> 10k€ -> VCC
+GPIO16 -> LED K
+LED A -> 56 Ohm -> VCC
+GPIO 14 -> Up-Pad
+GIPO 12 -> Stop-Pad
+GPIO 13 -> Down-Pad
+
