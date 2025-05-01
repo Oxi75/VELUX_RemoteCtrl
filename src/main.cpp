@@ -10,7 +10,7 @@
 #include "virtualHomee.hpp"
 
 // Version und Konstanten
-const double FIRMWARE_VERSION_d = 1.0;
+const double FIRMWARE_VERSION_d = 1.1;
 const String FIRMWARE_VERSION = String(FIRMWARE_VERSION_d, 1);
 
 const char* const TITLE = "Rolladen-Fernsteuerung";
@@ -804,7 +804,7 @@ void setup()
 
 
 static bool loopFirstCall = true;
-
+uint32_t wifiConnectAttempts = 0; // Anzahl der Versuche, sich mit dem WLAN zu verbinden
 
 void loop() 
 {
@@ -818,6 +818,7 @@ void loop()
     if (isConfigMode) 
     {
         ArduinoOTA.handle();
+        yield(); // Wichtig für OTA-Updates;
         // Webserver wird von ESPAsyncWebServer automatisch gehandelt
     } 
     else 
@@ -828,14 +829,22 @@ void loop()
             Serial.println("WiFi connection lost. Reconnecting...");
             ledBlink(); // LED blinken lassen, um den Verbindungsverlust anzuzeigen
             WiFi.reconnect();
+            wifiConnectAttempts++;
 //            delay(500);
         }
 
         if (WiFi.status() == WL_CONNECTED)
         {
+            wifiConnectAttempts = 0; // WLAN-Verbindung erfolgreich
             ledOff(); // LED ausschalten, wenn WLAN verbunden ist
             // Homee API im Steuerungsmodus verarbeiten
             //        vhih.handle();
+        }
+
+        if (wifiConnectAttempts >= 20) 
+        {
+            Serial.println("Failed to reconnect to WiFi after 20 attempts. Restarting ESP8266...");
+            ESP.reset(); // ESP8266 zurücksetzen, wenn keine Verbindung hergestellt werden kann
         }
     }
     
