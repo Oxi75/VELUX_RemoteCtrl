@@ -2,7 +2,7 @@
 #include <ESP8266WiFi.h>
 #include <ESPAsyncWebServer.h>
 #include <ESPAsyncTCP.h>
-#include <ArduinoOTA.h>
+#include <ESPAsyncHTTPUpdateServer.h>
 #include <EEPROM.h>
 #include <LittleFS.h>
 #include <DNSServer.h>
@@ -54,6 +54,7 @@ struct ConfigData
 ConfigData config;
 bool isConfigMode = false;
 AsyncWebServer server(80);
+ESPAsyncHTTPUpdateServer httpUpdater; // OTA-Update-Server
 DNSServer dnsServer;
 virtualHomee vhih;
 unsigned long lastWifiCheckTime = 0;
@@ -63,10 +64,10 @@ unsigned long lastBlinkTime = 0;
 const unsigned long blinkInterval = 500; // 500ms Blink-Intervall
 bool ledState = false;
 
-
 // Funktionsprototypen
 void setupConfigurationMode();
 void setupControlMode();
+void setupOTA();
 void handleRoot(AsyncWebServerRequest *request);
 void handleSave(AsyncWebServerRequest *request);
 void handleRestart(AsyncWebServerRequest *request);
@@ -81,7 +82,6 @@ void ledOn();
 void ledOff();
 void ledToggle();
 void ledBlink();
-
 
 String getHeader() 
 {
@@ -405,108 +405,12 @@ void setupConfigurationMode()
     server.on("/save", HTTP_POST, handleSave);
     server.on("/restart", HTTP_GET, handleRestart);
     
-    // Update-Handler einrichten
-    server.on("/update", HTTP_POST, [](AsyncWebServerRequest *request) {
-        bool shouldReboot = !Update.hasError();
-        AsyncWebServerResponse *response = request->beginResponse(200, "text/html", 
-            shouldReboot ? 
-            "<html><body>Update erfolgreich! Gerät startet neu...</body></html>" : 
-            "<html><body>Update fehlgeschlagen!</body></html>"
-        );
-        response->addHeader("Connection", "close");
-        request->send(response);
-        if (shouldReboot) {
-            delay(1000);
-            ESP.restart();
-        }
-    }, [](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
-        if (!index) {
-            Serial.printf("Update: %s\n", filename.c_str());
-            Serial.println("Update gestartet...");
-            
-            // Check if the update is for the sketch or filesystem
-            int cmd = U_FLASH;
-            size_t updateSize = request->contentLength();
-            
-            Serial.printf("Update size: %u bytes\n", updateSize);
-            
-            // Check if we have enough space
-            if (!Update.begin(updateSize, cmd)) {
-                Serial.println("Not enough space for update!");
-                Update.printError(Serial);
-                return request->send(400, "text/plain", "Not enough space for update");
-            }
-        }
-        
-        // Write data
-        if (Update.write(data, len) != len) {
-            Update.printError(Serial);
-            return request->send(400, "text/plain", "Write failed");
-        }
-            
-        if (final) {
-            if (Update.end(true)) {
-                Serial.println("Update erfolgreich abgeschlossen");
-            } else {
-                Update.printError(Serial);
-            }
-        }
-    });
-    
-    server.onNotFound(handleNotFound);
-    
     // OTA-Update einrichten
-    ArduinoOTA.setHostname("velux-rolladen");
-    ArduinoOTA.onStart([]() 
-    {
-        String type;
-        if (ArduinoOTA.getCommand() == U_FLASH) 
-        {
-            type = "sketch";
-        } 
-        else 
-        {
-            type = "filesystem";
-        }
-        Serial.println("Start updating " + type);
-    });
-    
-    ArduinoOTA.onEnd([]() 
-    {
-        Serial.println("\nUpdate complete");
-    });
-    
-    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) 
-    {
-        Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
-    });
-    
-    ArduinoOTA.onError([](ota_error_t error) 
-    {
-        Serial.printf("Error[%u]: ", error);
-        if (error == OTA_AUTH_ERROR) 
-        {
-            Serial.println("Auth Failed");
-        } 
-        else if (error == OTA_BEGIN_ERROR) 
-        {
-            Serial.println("Begin Failed");
-        } 
-        else if (error == OTA_CONNECT_ERROR) 
-        {
-            Serial.println("Connect Failed");
-        } 
-        else if (error == OTA_RECEIVE_ERROR) 
-        {
-            Serial.println("Receive Failed");
-        } 
-        else if (error == OTA_END_ERROR) 
-        {
-            Serial.println("End Failed");
-        }
-    });
-    
-    ArduinoOTA.begin();
+    // OTA-Update-Server einrichten
+    httpUpdater.setup(&server, "/update", "admin", "password"); // Benutzername und Passwort für OTA
+    Serial.println("OTA-Update verfügbar unter: http://<IP-Adresse>/update");
+
+    server.onNotFound(handleNotFound);
     server.begin();
     Serial.println("HTTP server started");
 }
@@ -791,6 +695,8 @@ void setup()
         config.checkValue = EEPROM_MAGIC_BYTE;
     }
 
+    //setupConfigurationMode();
+
     // Betriebsmodus bestimmen
     if ((digitalRead(PIN_STOP) == LOW) || (!cfgValid))
     {
@@ -817,9 +723,7 @@ void loop()
 
     if (isConfigMode) 
     {
-        ArduinoOTA.handle();
-        yield(); // Wichtig für OTA-Updates;
-        // Webserver wird von ESPAsyncWebServer automatisch gehandelt
+        yield(); // Wichtig für ESP8266, um den Watchdog zu füttern
     } 
     else 
     {        
