@@ -804,12 +804,10 @@ void setup()
 
 
 static bool loopFirstCall = true;
-uint32_t wifiConnectAttempts = 0; // Anzahl der Versuche, sich mit dem WLAN zu verbinden
+static uint32_t wifiConnectAttempts = 0; // Anzahl der Versuche, sich mit dem WLAN zu verbinden
 
 void loop() 
 {
-    yield(); // Wichtig für ESP8266, um den Watchdog zu füttern
-
     if (loopFirstCall) 
     {
         loopFirstCall = false;
@@ -849,4 +847,6 @@ void loop()
         Serial.println("Failed to reconnect to WiFi after 20 attempts. Restarting ESP8266...");
         ESP.reset(); // ESP8266 zurücksetzen, wenn keine Verbindung hergestellt werden kann
      }    
+
+     yield(); // Wichtig für ESP8266, um den Watchdog zu triggern
 }
