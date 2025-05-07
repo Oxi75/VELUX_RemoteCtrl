@@ -619,7 +619,8 @@ void setupHomee()
     
     // homee starten
     vhih.start();
-    
+
+
     Serial.println("Homee configured");
 }
 
@@ -805,6 +806,7 @@ void setup()
 
 static bool loopFirstCall = true;
 static uint32_t wifiConnectAttempts = 0; // Anzahl der Versuche, sich mit dem WLAN zu verbinden
+static bool WiFi_reconnect = false;  //system is in reconnection
 
 void loop() 
 {
@@ -824,29 +826,34 @@ void loop()
     } 
     
     
-    // Bei Verbindungsverlust erneut verbinden
-     if (WiFi.status() != WL_CONNECTED) 
-     {
-        Serial.println("WiFi connection lost. Reconnecting...");
-        ledBlink(); // LED blinken lassen, um den Verbindungsverlust anzuzeigen
-        WiFi.reconnect();
-        wifiConnectAttempts++;
-        delay(500);
-     }
+    if ((millis() - lastWifiCheckTime >= wifiCheckInterval) || (WiFi_reconnect))
+    {
+        lastWifiCheckTime = millis();
+    
+        // Bei Verbindungsverlust erneut verbinden
+        if (WiFi.status() != WL_CONNECTED) 
+        {
+            WiFi_reconnect = true;
+            Serial.println("WiFi connection lost. Reconnecting...");
+            ledToggle(); // LED blinken lassen, um den Verbindungsverlust anzuzeigen
+            WiFi.reconnect();
+            wifiConnectAttempts++;
+            delay(500);
+         }
 
-     if (WiFi.status() == WL_CONNECTED)
-     {
-        wifiConnectAttempts = 0; // WLAN-Verbindung erfolgreich
-        ledOff(); // LED ausschalten, wenn WLAN verbunden ist
-        // Homee API im Steuerungsmodus verarbeiten
-        //vhih.handle();
-     }
+        if (WiFi.status() == WL_CONNECTED)
+        {
+            WiFi_reconnect = false;
+            wifiConnectAttempts = 0; // WLAN-Verbindung erfolgreich
+            ledOff(); // LED ausschalten, wenn WLAN verbunden ist
+        }
 
-     if (wifiConnectAttempts >= 20) 
-     {
-        Serial.println("Failed to reconnect to WiFi after 20 attempts. Restarting ESP8266...");
-        ESP.reset(); // ESP8266 zurücksetzen, wenn keine Verbindung hergestellt werden kann
-     }    
+        if (wifiConnectAttempts >= 20) 
+        {
+            Serial.println("Failed to reconnect to WiFi after 20 attempts. Restarting ESP8266...");
+            ESP.reset(); // ESP8266 zurücksetzen, wenn keine Verbindung hergestellt werden kann
+        }    
+    }
 
      yield(); // Wichtig für ESP8266, um den Watchdog zu triggern
 }
