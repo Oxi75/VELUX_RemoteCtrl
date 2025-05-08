@@ -10,7 +10,7 @@
 #include "virtualHomee.hpp"
 
 // Version und Konstanten
-const double FIRMWARE_VERSION_d = 1.0;
+const double FIRMWARE_VERSION_d = 1.1;
 const String FIRMWARE_VERSION = String(FIRMWARE_VERSION_d, 1);
 
 const char* const TITLE = "Rolladen-Fernsteuerung";
@@ -551,6 +551,8 @@ void moveStop()
 
 
 // Homee-Callback-Funktion
+static bool mvUp=false, mvDown=false, mvStop=false;
+
 void IRAM_ATTR callBack_homeeReceiveValue(nodeAttributes* attr)
 {
     if (attr == nullptr) 
@@ -576,13 +578,13 @@ void IRAM_ATTR callBack_homeeReceiveValue(nodeAttributes* attr)
     switch((uint8_t)value)
     {
         case 0:
-            moveUp();
+            mvUp = true;
             break;
         case 1:
-            moveDown();
+            mvDown = true;
             break;
         case 2:
-            moveStop();
+            mvStop = true;
             break;
         default:
             Serial.println("Unknown value received: " + String(value));   
@@ -619,7 +621,8 @@ void setupHomee()
     
     // homee starten
     vhih.start();
-    
+
+
     Serial.println("Homee configured");
 }
 
@@ -804,7 +807,8 @@ void setup()
 
 
 static bool loopFirstCall = true;
-
+static uint32_t wifiConnectAttempts = 0; // Anzahl der Versuche, sich mit dem WLAN zu verbinden
+static bool WiFi_reconnect = false;  //system is in reconnection
 
 void loop() 
 {
@@ -818,26 +822,62 @@ void loop()
     if (isConfigMode) 
     {
         ArduinoOTA.handle();
+        yield(); // Wichtig für OTA-Updates;
         // Webserver wird von ESPAsyncWebServer automatisch gehandelt
+        return;
     } 
-    else 
-    {        
+    
+    
+    if ((millis() - lastWifiCheckTime >= wifiCheckInterval) || (WiFi_reconnect))
+    {
+        lastWifiCheckTime = millis();
+    
         // Bei Verbindungsverlust erneut verbinden
         if (WiFi.status() != WL_CONNECTED) 
         {
+            WiFi_reconnect = true;
             Serial.println("WiFi connection lost. Reconnecting...");
-            ledBlink(); // LED blinken lassen, um den Verbindungsverlust anzuzeigen
+            ledToggle(); // LED blinken lassen, um den Verbindungsverlust anzuzeigen
             WiFi.reconnect();
-//            delay(500);
-        }
+            wifiConnectAttempts++;
+            delay(500);
+         }
 
         if (WiFi.status() == WL_CONNECTED)
         {
+            WiFi_reconnect = false;
+            wifiConnectAttempts = 0; // WLAN-Verbindung erfolgreich
             ledOff(); // LED ausschalten, wenn WLAN verbunden ist
-            // Homee API im Steuerungsmodus verarbeiten
-            //        vhih.handle();
+        }
+
+        if (wifiConnectAttempts >= 20) 
+        {
+            Serial.println("Failed to reconnect to WiFi after 20 attempts. Restarting ESP8266...");
+            ESP.reset(); // ESP8266 zurücksetzen, wenn keine Verbindung hergestellt werden kann
+        }    
+    }
+
+
+    if (WiFi.status() == WL_CONNECTED)
+    {
+        if (mvUp)
+        {
+            moveUp();
+            mvUp = false;
+        }
+
+        if (mvDown)
+        {
+            moveDown();
+            mvDown = false;
+        }
+
+        if (mvStop)
+        {
+            moveStop();
+            mvStop = false;
         }
     }
-    
-    yield(); // Wichtig für ESP8266, um den Watchdog zu füttern
+
+     yield(); // Wichtig für ESP8266, um den Watchdog zu triggern
 }
