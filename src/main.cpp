@@ -551,6 +551,8 @@ void moveStop()
 
 
 // Homee-Callback-Funktion
+static bool mvUp=false, mvDown=false, mvStop=false;
+
 void IRAM_ATTR callBack_homeeReceiveValue(nodeAttributes* attr)
 {
     if (attr == nullptr) 
@@ -576,13 +578,13 @@ void IRAM_ATTR callBack_homeeReceiveValue(nodeAttributes* attr)
     switch((uint8_t)value)
     {
         case 0:
-            moveUp();
+            mvUp = true;
             break;
         case 1:
-            moveDown();
+            mvDown = true;
             break;
         case 2:
-            moveStop();
+            mvStop = true;
             break;
         default:
             Serial.println("Unknown value received: " + String(value));   
@@ -853,6 +855,28 @@ void loop()
             Serial.println("Failed to reconnect to WiFi after 20 attempts. Restarting ESP8266...");
             ESP.reset(); // ESP8266 zurücksetzen, wenn keine Verbindung hergestellt werden kann
         }    
+    }
+
+
+    if (WiFi.status() == WL_CONNECTED)
+    {
+        if (mvUp)
+        {
+            moveUp();
+            mvUp = false;
+        }
+
+        if (mvDown)
+        {
+            moveDown();
+            mvDown = false;
+        }
+
+        if (mvStop)
+        {
+            moveStop();
+            mvStop = false;
+        }
     }
 
      yield(); // Wichtig für ESP8266, um den Watchdog zu triggern
