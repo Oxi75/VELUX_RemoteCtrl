@@ -10,7 +10,7 @@
 #include "virtualHomee.hpp"
 
 // Version und Konstanten
-const double FIRMWARE_VERSION_d = 1.1;
+const double FIRMWARE_VERSION_d = 2.00;
 const String FIRMWARE_VERSION = String(FIRMWARE_VERSION_d, 1);
 
 const char* const TITLE = "Rolladen-Fernsteuerung";
@@ -23,13 +23,13 @@ const uint8_t PIN_LED = 16;
 
 // homee Attribute IDs
 const uint32_t ID_SHUTTER = 1;
-const uint32_t ID_HW_REV = 2;
+const uint32_t ID_ENABLE = 2;
 const uint32_t ID_SW_VER = 3;
 
 // Access Point Konfiguration (fest)
-const char* const AP_SSID = "vhih";
+const char* const AP_SSID = "VELUX Control";
 const char* const AP_PASSWORD = "12345678";
-const IPAddress AP_IP(192, 168, 42, 1);
+const IPAddress AP_IP(192, 168, 4, 1);
 const IPAddress AP_SUBNET(255, 255, 255, 0);
 
 // EEPROM Layout
@@ -62,7 +62,7 @@ bool wifiConnected = false;
 unsigned long lastBlinkTime = 0;
 const unsigned long blinkInterval = 500; // 500ms Blink-Intervall
 bool ledState = false;
-
+bool shutterEnabled = true;
 
 // Funktionsprototypen
 void setupConfigurationMode();
@@ -81,35 +81,64 @@ void ledOn();
 void ledOff();
 void ledToggle();
 void ledBlink();
+String loadAndProcessHTML(const String& filename);
+String replaceVariables(String html);
 
-
-String getHeader() 
-{
-    String html = "<!DOCTYPE html><html><head>";
-    html += "<meta name='viewport' content='width=device-width, initial-scale=1.0'>";
-    html += "<style>";
-    html += "body { font-family: Arial, sans-serif; margin: 20px; }";
-    html += "h1 { color: #0066cc; }";
-    html += "hr { border: 1px solid #ddd; }";
-    html += "h2 { color: #444; margin-top: 20px; }";
-    html += ".btn-container { display: flex; gap: 10px; margin: 15px 0; }";
-    html += ".btn { background-color: #0066cc; color: white; border: none; padding: 10px 15px; cursor: pointer; border-radius: 4px; }";
-    html += ".btn:hover { background-color: #0052a3; }";
-    html += ".form-group { margin-bottom: 15px; }";
-    html += "label { display: inline-block; width: 150px; }";
-    html += "input { padding: 8px; width: 250px; }";
-    html += "input[type=number] { width: 80px; }";
-    html += "</style>";
-    html += "<title>VELUX Rolladen-Fernsteuerung</title></head><body>";
-    html += "<h1>VELUX Rolladen-Fernsteuerung</h1>";
-    html += "<p>Version " + String(FIRMWARE_VERSION) + "</p>";
-    html += "<hr>";
+// HTML-Template-Verarbeitung
+String loadAndProcessHTML(const String& filename) {
+    String html = "";
+    
+    if (!LittleFS.exists(filename)) {
+        Serial.println("HTML file not found: " + filename);
+        return "<html><body><h1>Error: Template file not found</h1><p>File: " + filename + "</p></body></html>";
+    }
+    
+    File file = LittleFS.open(filename, "r");
+    if (!file) {
+        Serial.println("Failed to open HTML file: " + filename);
+        return "<html><body><h1>Error: Could not open template file</h1></body></html>";
+    }
+    
+    html = file.readString();
+    file.close();
+    
+    // Variablen ersetzen
+    html = replaceVariables(html);
+    
     return html;
 }
 
-String getFooter() 
-{
-    return "</body></html>";
+String replaceVariables(String html) {
+    // Version
+    html.replace("{{VERSION}}", FIRMWARE_VERSION);
+    
+    // WiFi-Konfiguration
+    html.replace("{{WIFI_SSID}}", String(config.wifi_ssid));
+    html.replace("{{WIFI_PASSWORD}}", String(config.wifi_password));
+    
+    // Gateway IP
+    html.replace("{{GATEWAY_IP1}}", String(config.gateway_ip[0]));
+    html.replace("{{GATEWAY_IP2}}", String(config.gateway_ip[1]));
+    html.replace("{{GATEWAY_IP3}}", String(config.gateway_ip[2]));
+    html.replace("{{GATEWAY_IP4}}", String(config.gateway_ip[3]));
+    
+    // Client IP
+    html.replace("{{CLIENT_IP1}}", String(config.client_ip[0]));
+    html.replace("{{CLIENT_IP2}}", String(config.client_ip[1]));
+    html.replace("{{CLIENT_IP3}}", String(config.client_ip[2]));
+    html.replace("{{CLIENT_IP4}}", String(config.client_ip[3]));
+    
+    // Subnet Mask
+    html.replace("{{SUBNET_IP1}}", String(config.subnet_mask[0]));
+    html.replace("{{SUBNET_IP2}}", String(config.subnet_mask[1]));
+    html.replace("{{SUBNET_IP3}}", String(config.subnet_mask[2]));
+    html.replace("{{SUBNET_IP4}}", String(config.subnet_mask[3]));
+    
+    // Homee-Konfiguration
+    html.replace("{{HOMEE_NAME}}", String(config.homee_name));
+    html.replace("{{HOMEE_ID}}", String(config.homee_id));
+    
+    return html;
 }
 
 bool saveConfiguration() {
@@ -139,7 +168,6 @@ bool saveConfiguration() {
     delay(500); // Wait for EEPROM operations
     return success;
 }
-
 
 bool loadConfiguration()
 {
@@ -180,87 +208,10 @@ bool loadConfiguration()
     return true;
 }
 
-
 void handleRoot(AsyncWebServerRequest *request) {
-    String html = getHeader();
-
-    html += "<form id='configForm' action='/save' method='POST'>";
-    
-    html += "<h2>Netzwerkeinstellungen</h2>";
-
-    html += "<div class='form-group'>";
-    html += "<label for='ssid'>SSID:</label>";
-    html += "<input type='text' id='ssid' name='ssid' value='" + String(config.wifi_ssid) + "' maxlength='31'>";
-    html += "</div>";
-
-    html += "<div class='form-group'>";
-    html += "<label for='password'>Passwort:</label>";
-    html += "<input type='password' id='password' name='password' value='" + String(config.wifi_password) + "' maxlength='63'>";
-    html += "</div>";
-
-    html += "<div class='form-group'>";
-    html += "<label>Gateway-IP:</label>";
-    html += "<input type='number' name='gateway_ip1' min='0' max='255' value='" + String(config.gateway_ip[0]) + "' style='width:60px;'>.";
-    html += "<input type='number' name='gateway_ip2' min='0' max='255' value='" + String(config.gateway_ip[1]) + "' style='width:60px;'>.";
-    html += "<input type='number' name='gateway_ip3' min='0' max='255' value='" + String(config.gateway_ip[2]) + "' style='width:60px;'>.";
-    html += "<input type='number' name='gateway_ip4' min='0' max='255' value='" + String(config.gateway_ip[3]) + "' style='width:60px;'>";
-    html += "</div>";
-
-    html += "<div class='form-group'>";
-    html += "<label>Client-IP:</label>";
-    html += "<input type='number' name='client_ip1' min='0' max='255' value='" + String(config.client_ip[0]) + "' style='width:60px;'>.";
-    html += "<input type='number' name='client_ip2' min='0' max='255' value='" + String(config.client_ip[1]) + "' style='width:60px;'>.";
-    html += "<input type='number' name='client_ip3' min='0' max='255' value='" + String(config.client_ip[2]) + "' style='width:60px;'>.";
-    html += "<input type='number' name='client_ip4' min='0' max='255' value='" + String(config.client_ip[3]) + "' style='width:60px;'>";
-    html += "</div>";
-
-    html += "<div class='form-group'>";
-    html += "<label>Subnet-Maske:</label>";
-    html += "<input type='number' name='subnet_ip1' min='0' max='255' value='" + String(config.subnet_mask[0]) + "' style='width:60px;'>.";
-    html += "<input type='number' name='subnet_ip2' min='0' max='255' value='" + String(config.subnet_mask[1]) + "' style='width:60px;'>.";
-    html += "<input type='number' name='subnet_ip3' min='0' max='255' value='" + String(config.subnet_mask[2]) + "' style='width:60px;'>.";
-    html += "<input type='number' name='subnet_ip4' min='0' max='255' value='" + String(config.subnet_mask[3]) + "' style='width:60px;'>";
-    html += "</div>";
-
-    html += "<h2>Homee-Einstellungen</h2>";
-
-    html += "<div class='form-group'>";
-    html += "<label for='homeeName'>Homee Node Name:</label>";
-    html += "<input type='text' id='homeeName' name='homeeName' value='" + String(config.homee_name) + "' maxlength='48'>";
-    html += "</div>";
-
-    html += "<div class='form-group'>";
-    html += "<label for='homee_id'>Homee Node ID:</label>";
-    html += "<input type='number' id='homee_id' name='homee_id' min='1' max='255' value='" + String(config.homee_id) + "'>";
-    html += "</div>";
-
-    html += "<div class='form-group'>";
-    html += "<button class='btn' type='submit'>Save</button>";
-    html += "</div>";
-
-    html += "</form>";
-
-    html += "<div class='btn-container'>";
-    html += "<a href='/restart'><button class='btn'>Restart</button></a>";
-    html += "</div>";
-
-    html += "<hr>";
-
-    html += "<h2>Firmware Update</h2>";
-    html += "<form method='POST' action='/update' enctype='multipart/form-data'>";
-    html += "<div class='form-group'>";
-    html += "<label for='update'>Firmware:</label>";
-    html += "<input type='file' id='update' name='update'>";
-    html += "</div>";
-    html += "<button class='btn' type='submit'>Update starten</button>";
-    html += "</form>";
-
-    html += getFooter();
-
+    String html = loadAndProcessHTML("/config.html");
     request->send(200, "text/html", html);
 }
-
-
 
 void handleSave(AsyncWebServerRequest *request) {
     bool paramsFound = false;
@@ -341,15 +292,16 @@ void handleSave(AsyncWebServerRequest *request) {
         Serial.println("No parameters found! Configuration NOT saved");
     }
     
-    String html = getHeader();
+    // HTML-Template laden und Variablen ersetzen
+    String html = loadAndProcessHTML("/save_response.html");
+    
     if (saved) {
-        html += "<p>Parameter successfully stored. The device will be restarted soon.</p>";
-    } else
-    {
-        html += "<p>No changed values found or storing failed.</p>";
+        html.replace("{{STATUS_CLASS}}", "success");
+        html.replace("{{MESSAGE}}", "Parameter successfully stored. The device will be restarted soon.");
+    } else {
+        html.replace("{{STATUS_CLASS}}", "error");
+        html.replace("{{MESSAGE}}", "No changed values found or storing failed.");
     }
-    html += "<script>setTimeout(function(){ window.location.href='/' }, 5000);</script>";
-    html += getFooter();
     
     request->send(200, "text/html", html);
     
@@ -358,13 +310,9 @@ void handleSave(AsyncWebServerRequest *request) {
     if (paramsFound) ESP.restart();
 }
 
-
 void handleRestart(AsyncWebServerRequest *request) 
 {
-    String html = getHeader();
-    html += "<p>Gerät wird neu gestartet...</p>";
-    html += "<script>setTimeout(function(){ window.location.href='/' }, 5000);</script>";
-    html += getFooter();
+    String html = loadAndProcessHTML("/restart.html");
     request->send(200, "text/html", html);
     
     // Nach dem Senden neu starten
@@ -372,14 +320,10 @@ void handleRestart(AsyncWebServerRequest *request)
     ESP.restart();
 }
 
-
 void handleNotFound(AsyncWebServerRequest *request) 
 {
     request->send(404, "text/plain", "Seite nicht gefunden");
 }
-
-
-// In setupConfigurationMode() ergänzen, direkt nach den anderen server.on Definitionen:
 
 void setupConfigurationMode() 
 {
@@ -511,7 +455,6 @@ void setupConfigurationMode()
     Serial.println("HTTP server started");
 }
 
-
 // Rolladen-Steuerungsfunktionen
 void moveUp() 
 {   
@@ -549,7 +492,6 @@ void moveStop()
     ledOff(); //simulated button press finished
 }
 
-
 // Homee-Callback-Funktion
 static bool mvUp=false, mvDown=false, mvStop=false;
 
@@ -569,6 +511,21 @@ void IRAM_ATTR callBack_homeeReceiveValue(nodeAttributes* attr)
     Serial.println("Received value: " + String(value) + " for ID: " + String(id));
     
     // Je nach empfangener Nachricht die entsprechende Aktion ausführen
+    if (id == ID_ENABLE)
+    {
+        if (value != 0)
+        {
+            shutterEnabled == true;
+            Serial.println("Shutter enabled");
+        }
+        else
+        {
+            shutterEnabled = false;
+            Serial.println("Shutter disabled");
+        }
+        return;
+    }
+
     if (id != ID_SHUTTER) 
     {
         Serial.println("Unknown ID received: " + String(id));   
@@ -578,19 +535,20 @@ void IRAM_ATTR callBack_homeeReceiveValue(nodeAttributes* attr)
     switch((uint8_t)value)
     {
         case 0:
-            mvUp = true;
+            if (shutterEnabled) mvUp = true; 
             break;
         case 1:
-            mvDown = true;
+            if (shutterEnabled) mvDown = true;
             break;
         case 2:
-            mvStop = true;
+            mvStop = true;  //Stop will also work if Shutter is disabled
             break;
         default:
             Serial.println("Unknown value received: " + String(value));   
             return;
     }
 }
+
 
 
 void setupHomee() 
@@ -607,6 +565,17 @@ void setupHomee()
     attr->setCallback(callBack_homeeReceiveValue);
     n1->AddAttributes(attr);
 
+    // Attribut: OnOff
+    attr = new nodeAttributes(1, ID_ENABLE);
+    attr->setName("enabled");
+    attr->setUnit("");
+    attr->setCurrentValue(1.0);
+    attr->setMaximumValue(1.0);
+    attr->setMinimumValue(0.0);
+    attr->setEditable(true);
+    attr->setCallback(callBack_homeeReceiveValue);
+    n1->AddAttributes(attr);
+    
     // Attribut: Firmware-Version
     attr = new nodeAttributes(44, ID_SW_VER);
     attr->setName("Firmware Version");
@@ -773,13 +742,13 @@ void setup()
         // Gateway IP (192.168.1.1)
         config.gateway_ip[0] = 192;
         config.gateway_ip[1] = 168;
-        config.gateway_ip[2] = 1;
+        config.gateway_ip[2] = 0;
         config.gateway_ip[3] = 1;
         
         // Client IP (192.168.1.100)
         config.client_ip[0] = 192;
         config.client_ip[1] = 168;
-        config.client_ip[2] = 1;
+        config.client_ip[2] = 0;
         config.client_ip[3] = 100;
         
         // Subnet Mask (255.255.255.0)
