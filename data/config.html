@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        h1 { color: #0066cc; }
+        hr { border: 1px solid #ddd; }
+        h2 { color: #444; margin-top: 20px; }
+        .btn-container { display: flex; gap: 10px; margin: 15px 0; }
+        .btn { background-color: #0066cc; color: white; border: none; padding: 10px 15px; cursor: pointer; border-radius: 4px; }
+        .btn:hover { background-color: #0052a3; }
+        .form-group { margin-bottom: 15px; }
+        label { display: inline-block; width: 150px; }
+        input { padding: 8px; width: 250px; }
+        input[type=number] { width: 80px; }
+    </style>
+    <title>VELUX Rolladen-Fernsteuerung</title>
+</head>
+<body>
+    <h1>VELUX Rolladen-Fernsteuerung</h1>
+    <p>Version {{VERSION}}</p>
+    <hr>
+
+    <form id='configForm' action='/save' method='POST'>
+        
+        <h2>Netzwerkeinstellungen</h2>
+
+        <div class='form-group'>
+            <label for='ssid'>SSID:</label>
+            <input type='text' id='ssid' name='ssid' value='{{WIFI_SSID}}' maxlength='31'>
+        </div>
+
+        <div class='form-group'>
+            <label for='password'>Passwort:</label>
+            <input type='password' id='password' name='password' value='{{WIFI_PASSWORD}}' maxlength='63'>
+        </div>
+
+        <div class='form-group'>
+            <label>Gateway-IP:</label>
+            <input type='number' name='gateway_ip1' min='0' max='255' value='{{GATEWAY_IP1}}' style='width:60px;'>.
+            <input type='number' name='gateway_ip2' min='0' max='255' value='{{GATEWAY_IP2}}' style='width:60px;'>.
+            <input type='number' name='gateway_ip3' min='0' max='255' value='{{GATEWAY_IP3}}' style='width:60px;'>.
+            <input type='number' name='gateway_ip4' min='0' max='255' value='{{GATEWAY_IP4}}' style='width:60px;'>
+        </div>
+
+        <div class='form-group'>
+            <label>Client-IP:</label>
+            <input type='number' name='client_ip1' min='0' max='255' value='{{CLIENT_IP1}}' style='width:60px;'>.
+            <input type='number' name='client_ip2' min='0' max='255' value='{{CLIENT_IP2}}' style='width:60px;'>.
+            <input type='number' name='client_ip3' min='0' max='255' value='{{CLIENT_IP3}}' style='width:60px;'>.
+            <input type='number' name='client_ip4' min='0' max='255' value='{{CLIENT_IP4}}' style='width:60px;'>
+        </div>
+
+        <div class='form-group'>
+            <label>Subnet-Maske:</label>
+            <input type='number' name='subnet_ip1' min='0' max='255' value='{{SUBNET_IP1}}' style='width:60px;'>.
+            <input type='number' name='subnet_ip2' min='0' max='255' value='{{SUBNET_IP2}}' style='width:60px;'>.
+            <input type='number' name='subnet_ip3' min='0' max='255' value='{{SUBNET_IP3}}' style='width:60px;'>.
+            <input type='number' name='subnet_ip4' min='0' max='255' value='{{SUBNET_IP4}}' style='width:60px;'>
+        </div>
+
+        <h2>Homee-Einstellungen</h2>
+
+        <div class='form-group'>
+            <label for='homeeName'>Homee Node Name:</label>
+            <input type='text' id='homeeName' name='homeeName' value='{{HOMEE_NAME}}' maxlength='48'>
+        </div>
+
+        <div class='form-group'>
+            <label for='homee_id'>Homee Node ID:</label>
+            <input type='number' id='homee_id' name='homee_id' min='1' max='255' value='{{HOMEE_ID}}'>
+        </div>
+
+        <div class='form-group'>
+            <button class='btn' type='submit'>Save</button>
+        </div>
+
+    </form>
+
+    <div class='btn-container'>
+        <a href='/restart'><button class='btn'>Restart</button></a>
+    </div>
+
+    <hr>
+
+    <h2>Firmware Update</h2>
+    <form method='POST' action='/update' enctype='multipart/form-data'>
+        <div class='form-group'>
+            <label for='update'>Firmware:</label>
+            <input type='file' id='update' name='update'>
+        </div>
+        <button class='btn' type='submit'>Update starten</button>
+    </form>
+
+</body>
+</html>

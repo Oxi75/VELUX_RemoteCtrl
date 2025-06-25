@@ -37,8 +37,8 @@ The firmware supports two modes:
 
 1. **Configuration Mode**: 
    - Activated by pressing the STOP button during startup or if no valid configuration is found.
-   - Creates a WiFi Access Point (SSID: `vhih`, Password: `12345678`) for configuration.
-   - Accessible via the IP address `192.168.42.1`.
+   - Creates a WiFi Access Point (SSID: `VELUX Control`, Password: `12345678`) for configuration.
+   - Accessible via the IP address `192.168.4.1`.
 
    The web interface allows you to:
    - Configure WiFi credentials and network settings.
@@ -52,6 +52,7 @@ The firmware supports two modes:
    - Connects to the configured WiFi network and integrates with Homee
    - To add in homee: Open homee app, select "Geräte" -> + (hinzufügen) -> Verschiedene -> homee in homee -> 2a homee verbinden
      Enter the configured IP address (not the one from the access point) and any string as user name and password.
+   - beside the _up_, _stop_ and _down_ keys the device provides an _enabled_ property in homee. It is _true_ by default but can be set to _false_ e.g. by a homeegram. With this property you can prevent the up/down action to be executed by homee (physical keys still work).
      
 
 
@@ -76,6 +77,17 @@ The firmware supports two modes:
 This project uses the [Homee API for ESP32/ESP8266 from Daniel Koop](https://github.com/DanielKnoop/homee-api-esp32). Many thanks to him!
 
 I am not affiliated with **homee GmbH**, **codeatelier GmbH** or the **VELUX group**
+
+
+##History
+V2.0 - moved html code to separate files
+     - added the _enabled_ property
+     - changed SSID and IP in access point mode
+
+     Known issues: 
+     - OTA does not work, it causes a kernel panic and a restart
+
+V1.1 - first released version
 
 
 ## License
