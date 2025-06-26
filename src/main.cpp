@@ -10,7 +10,7 @@
 #include "virtualHomee.hpp"
 
 // Version und Konstanten
-const double FIRMWARE_VERSION_d = 2.00;
+const double FIRMWARE_VERSION_d = 2.01;
 const String FIRMWARE_VERSION = String(FIRMWARE_VERSION_d, 1);
 
 const char* const TITLE = "Rolladen-Fernsteuerung";
@@ -23,7 +23,7 @@ const uint8_t PIN_LED = 16;
 
 // homee Attribute IDs
 const uint32_t ID_SHUTTER = 1;
-const uint32_t ID_ENABLE = 2;
+const uint32_t ID_DISABLE = 2;
 const uint32_t ID_SW_VER = 3;
 
 // Access Point Konfiguration (fest)
@@ -62,7 +62,7 @@ bool wifiConnected = false;
 unsigned long lastBlinkTime = 0;
 const unsigned long blinkInterval = 500; // 500ms Blink-Intervall
 bool ledState = false;
-bool shutterEnabled = true;
+bool shutterDisabled = false;
 
 // Funktionsprototypen
 void setupConfigurationMode();
@@ -511,16 +511,16 @@ void IRAM_ATTR callBack_homeeReceiveValue(nodeAttributes* attr)
     Serial.println("Received value: " + String(value) + " for ID: " + String(id));
     
     // Je nach empfangener Nachricht die entsprechende Aktion ausführen
-    if (id == ID_ENABLE)
+    if (id == ID_DISABLE)
     {
-        if (value != 0)
+        if (value == 0)
         {
-            shutterEnabled == true;
+            shutterDisabled = false;
             Serial.println("Shutter enabled");
         }
         else
         {
-            shutterEnabled = false;
+            shutterDisabled = true;
             Serial.println("Shutter disabled");
         }
         return;
@@ -535,10 +535,10 @@ void IRAM_ATTR callBack_homeeReceiveValue(nodeAttributes* attr)
     switch((uint8_t)value)
     {
         case 0:
-            if (shutterEnabled) mvUp = true; 
+            if (!shutterDisabled) mvUp = true; 
             break;
         case 1:
-            if (shutterEnabled) mvDown = true;
+            if (!shutterDisabled) mvDown = true;
             break;
         case 2:
             mvStop = true;  //Stop will also work if Shutter is disabled
@@ -566,10 +566,10 @@ void setupHomee()
     n1->AddAttributes(attr);
 
     // Attribut: OnOff
-    attr = new nodeAttributes(1, ID_ENABLE);
-    attr->setName("enabled");
+    attr = new nodeAttributes(1, ID_DISABLE);
+    attr->setName("disabled");
     attr->setUnit("");
-    attr->setCurrentValue(1.0);
+    attr->setCurrentValue(0.0);
     attr->setMaximumValue(1.0);
     attr->setMinimumValue(0.0);
     attr->setEditable(true);

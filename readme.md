@@ -80,8 +80,9 @@ I am not affiliated with **homee GmbH**, **codeatelier GmbH** or the **VELUX gro
 
 
 ##History
-V2.0 - moved html code to separate files
-     - added the _enabled_ property
+V2.01 
+     - moved html code to separate files
+     - added the _disabled_ property
      - changed SSID and IP in access point mode
 
      Known issues: 
