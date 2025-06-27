@@ -10,7 +10,7 @@
 #include "virtualHomee.hpp"
 
 // Version und Konstanten
-const double FIRMWARE_VERSION_d = 2.01;
+const double FIRMWARE_VERSION_d = 2.1;
 const String FIRMWARE_VERSION = String(FIRMWARE_VERSION_d, 1);
 
 const char* const TITLE = "Rolladen-Fernsteuerung";
@@ -63,6 +63,7 @@ unsigned long lastBlinkTime = 0;
 const unsigned long blinkInterval = 500; // 500ms Blink-Intervall
 bool ledState = false;
 bool shutterDisabled = false;
+bool otaInProgress = false;
 
 // Funktionsprototypen
 void setupConfigurationMode();
@@ -71,6 +72,7 @@ void handleRoot(AsyncWebServerRequest *request);
 void handleSave(AsyncWebServerRequest *request);
 void handleRestart(AsyncWebServerRequest *request);
 void handleNotFound(AsyncWebServerRequest *request);
+void prepareForOTA();
 void moveUp();
 void moveDown();
 void moveStop();
@@ -325,6 +327,39 @@ void handleNotFound(AsyncWebServerRequest *request)
     request->send(404, "text/plain", "Seite nicht gefunden");
 }
 
+
+// Funktion zum Vorbereiten des OTA-Updates
+void prepareForOTA() {
+    Serial.println("Preparing for OTA update...");
+    
+    // Flag setzen
+    otaInProgress = true;
+    
+    // KRITISCH: ArduinoOTA komplett stoppen
+    ArduinoOTA.end();
+    Serial.println("ArduinoOTA stopped");
+    
+    // Webserver stoppen
+    server.end();
+    Serial.println("Web server stopped");
+    
+    // Alle aktiven Verbindungen beenden
+    WiFi.disconnect(false);
+    delay(100);
+    
+    // Watchdog komplett deaktivieren
+    system_soft_wdt_stop();
+    wdt_disable();
+    ESP.wdtDisable();
+   
+    // Kurze Pause für sauberen Shutdown
+    delay(2000);
+    
+    Serial.println("System prepared for OTA");
+}
+
+
+// Geänderte setupConfigurationMode() Funktion
 void setupConfigurationMode() 
 {
     Serial.println("Starting configuration mode, connect to AP:");
@@ -349,105 +384,145 @@ void setupConfigurationMode()
     server.on("/save", HTTP_POST, handleSave);
     server.on("/restart", HTTP_GET, handleRestart);
     
-    // Update-Handler einrichten
+    // VERBESSERTE Update-Handler einrichten
     server.on("/update", HTTP_POST, [](AsyncWebServerRequest *request) {
         bool shouldReboot = !Update.hasError();
         AsyncWebServerResponse *response = request->beginResponse(200, "text/html", 
             shouldReboot ? 
-            "<html><body>Update erfolgreich! Gerät startet neu...</body></html>" : 
-            "<html><body>Update fehlgeschlagen!</body></html>"
+            "<html><body><h1>Update erfolgreich!</h1><p>Gerät startet in 3 Sekunden neu...</p><script>setTimeout(function(){window.location.href='/';}, 5000);</script></body></html>" : 
+            "<html><body><h1>Update fehlgeschlagen!</h1><p>Fehler: " + Update.getErrorString() + "</p><a href='/'>Zurück</a></body></html>"
         );
         response->addHeader("Connection", "close");
         request->send(response);
+        
         if (shouldReboot) {
-            delay(1000);
+            delay(3000);
             ESP.restart();
         }
     }, [](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
-        if (!index) {
+        
+        if (!index) {  // Erster Aufruf - Update starten
             Serial.printf("Update: %s\n", filename.c_str());
             Serial.println("Update gestartet...");
             
-            // Check if the update is for the sketch or filesystem
+            // WICHTIG: System für OTA vorbereiten - BEVOR Update.begin()
+            prepareForOTA();
+            
             int cmd = U_FLASH;
             size_t updateSize = request->contentLength();
             
             Serial.printf("Update size: %u bytes\n", updateSize);
             
-            // Check if we have enough space
-            if (!Update.begin(updateSize, cmd)) {
+            // Verfügbaren Speicher prüfen
+            if (ESP.getFreeSketchSpace() < updateSize) {
                 Serial.println("Not enough space for update!");
-                Update.printError(Serial);
-                return request->send(400, "text/plain", "Not enough space for update");
+                return request->send(400, "text/plain", "Nicht genügend Speicher für Update");
             }
+            
+            // WICHTIG: Watchdog vor Update.begin() deaktivieren
+            ESP.wdtDisable();
+            
+            // Update beginnen
+            if (!Update.begin(updateSize, cmd)) {
+                Serial.println("Update.begin() failed!");
+                Update.printError(Serial);
+                return request->send(400, "text/plain", "Update konnte nicht gestartet werden: " + Update.getErrorString());
+            }
+            
+            Serial.println("Update successfully started");
         }
         
-        // Write data
-        if (Update.write(data, len) != len) {
-            Update.printError(Serial);
-            return request->send(400, "text/plain", "Write failed");
+        // Daten schreiben mit Fehlerbehandlung
+        if (len > 0) {
+            // Watchdog vor jedem Schreibvorgang füttern
+            ESP.wdtFeed();
+            
+            size_t written = Update.write(data, len);
+            if (written != len) {
+                Serial.printf("Write error: wrote %u bytes instead of %u\n", written, len);
+                Update.printError(Serial);
+                return request->send(400, "text/plain", "Schreibfehler beim Update");
+            }
+            
+            // Progress-Ausgabe (nur alle 10%)
+            static uint32_t lastProgress = 0;
+            uint32_t progress = (Update.progress() * 100) / Update.size();
+            if (progress >= lastProgress + 10) {
+                Serial.printf("Progress: %u%%\n", progress);
+                lastProgress = progress;
+            }
+            
+            // System-Tasks ausführen lassen
+            yield();
         }
             
-        if (final) {
+        if (final) {  // Letzter Aufruf - Update beenden
+            Serial.println("Update data received completely");
+            
             if (Update.end(true)) {
                 Serial.println("Update erfolgreich abgeschlossen");
+                Serial.printf("Update size: %u bytes\n", Update.size());
             } else {
+                Serial.println("Update failed to complete");
                 Update.printError(Serial);
+                return request->send(400, "text/plain", "Update konnte nicht abgeschlossen werden: " + Update.getErrorString());
             }
         }
     });
     
     server.onNotFound(handleNotFound);
     
-    // OTA-Update einrichten
+    // VERBESSERTE OTA-Update einrichten (für Arduino IDE)
     ArduinoOTA.setHostname("velux-rolladen");
-    ArduinoOTA.onStart([]() 
-    {
-        String type;
-        if (ArduinoOTA.getCommand() == U_FLASH) 
-        {
-            type = "sketch";
-        } 
-        else 
-        {
-            type = "filesystem";
+    ArduinoOTA.setPort(8266);
+    
+    ArduinoOTA.onStart([]() {
+        String type = (ArduinoOTA.getCommand() == U_FLASH) ? "sketch" : "filesystem";
+        Serial.println("OTA Start updating " + type);
+        
+        // WICHTIG: System für OTA vorbereiten
+        prepareForOTA();
+    });
+    
+    ArduinoOTA.onEnd([]() {
+        Serial.println("\nOTA Update complete");
+        // Watchdog wieder aktivieren
+        ESP.wdtEnable(1000);
+    });
+    
+    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+        // Reduzierte Ausgabe um Blocking zu vermeiden
+        static unsigned long lastOutput = 0;
+        unsigned long currentTime = millis();
+        
+        if (currentTime - lastOutput > 2000) { // Nur alle 2 Sekunden
+            Serial.printf("OTA Progress: %u%%\n", (progress / (total / 100)));
+            lastOutput = currentTime;
         }
-        Serial.println("Start updating " + type);
+        
+        // Watchdog füttern und System-Tasks ausführen
+        ESP.wdtFeed();
+        yield();
     });
     
-    ArduinoOTA.onEnd([]() 
-    {
-        Serial.println("\nUpdate complete");
-    });
-    
-    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) 
-    {
-        Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
-    });
-    
-    ArduinoOTA.onError([](ota_error_t error) 
-    {
-        Serial.printf("Error[%u]: ", error);
-        if (error == OTA_AUTH_ERROR) 
-        {
+    ArduinoOTA.onError([](ota_error_t error) {
+        Serial.printf("OTA Error[%u]: ", error);
+        if (error == OTA_AUTH_ERROR) {
             Serial.println("Auth Failed");
-        } 
-        else if (error == OTA_BEGIN_ERROR) 
-        {
+        } else if (error == OTA_BEGIN_ERROR) {
             Serial.println("Begin Failed");
-        } 
-        else if (error == OTA_CONNECT_ERROR) 
-        {
+        } else if (error == OTA_CONNECT_ERROR) {
             Serial.println("Connect Failed");
-        } 
-        else if (error == OTA_RECEIVE_ERROR) 
-        {
+        } else if (error == OTA_RECEIVE_ERROR) {
             Serial.println("Receive Failed");
-        } 
-        else if (error == OTA_END_ERROR) 
-        {
+        } else if (error == OTA_END_ERROR) {
             Serial.println("End Failed");
         }
+        
+        // Nach Fehler Neustart
+        Serial.println("Restarting due to OTA error...");
+        delay(2000);
+        ESP.restart();
     });
     
     ArduinoOTA.begin();
@@ -790,7 +865,7 @@ void loop()
 
     if (isConfigMode) 
     {
-        ArduinoOTA.handle();
+//        if (!otaInProgress) ArduinoOTA.handle();
         yield(); // Wichtig für OTA-Updates;
         // Webserver wird von ESPAsyncWebServer automatisch gehandelt
         return;
